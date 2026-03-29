@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { UploadCloud, File, FileText, CheckCircle, Loader2 } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { UploadCloud, FileText, Loader2, RefreshCw, FolderOpen, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadBook } from '../api';
 
@@ -8,6 +8,8 @@ export default function Uploader({ onUploadComplete }) {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
+  const failedFileRef = useRef(null); // keep last failed file for retry
+  const fileInputRef = useRef(null);
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -36,12 +38,15 @@ export default function Uploader({ onUploadComplete }) {
     }
   };
 
-  const submitUpload = async () => {
-    if (!file) return;
+  const submitUpload = async (fileToUpload) => {
+    const target = fileToUpload || file;
+    if (!target) return;
+    failedFileRef.current = target;
     setIsUploading(true);
     setError(null);
     try {
-      const data = await uploadBook(file);
+      const data = await uploadBook(target);
+      failedFileRef.current = null;
       onUploadComplete(data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to process the book.');
@@ -49,6 +54,20 @@ export default function Uploader({ onUploadComplete }) {
       setIsUploading(false);
       setFile(null);
     }
+  };
+
+  const handleRetry = () => {
+    if (failedFileRef.current) {
+      submitUpload(failedFileRef.current);
+    }
+  };
+
+  const handleSelectAnother = () => {
+    setError(null);
+    setFile(null);
+    failedFileRef.current = null;
+    // Reset the hidden file input so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -69,10 +88,11 @@ export default function Uploader({ onUploadComplete }) {
         } flex flex-col items-center justify-center cursor-pointer overflow-hidden group`}
       >
         <input 
+          ref={fileInputRef}
           type="file" 
           onChange={handleFileChange} 
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-          disabled={isUploading}
+          disabled={isUploading || !!error}
           accept=".epub,.pdf,.mobi,.prc,.txt"
         />
         
@@ -113,11 +133,39 @@ export default function Uploader({ onUploadComplete }) {
         </AnimatePresence>
       </div>
 
-      {error && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 p-3 rounded-lg border border-red-500/50 bg-red-900/20 text-red-200 text-center text-sm">
-          {error}
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mt-4 p-4 rounded-xl border border-red-500/40 bg-red-900/20 text-red-200"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+              <p className="text-sm font-medium">{error}</p>
+            </div>
+            <div className="flex gap-3 justify-center">
+              {failedFileRef.current && (
+                <button
+                  onClick={handleRetry}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-sm font-semibold shadow-lg shadow-cyan-500/20 transition-all"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Retry
+                </button>
+              )}
+              <button
+                onClick={handleSelectAnother}
+                className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-semibold border border-slate-600 transition-all"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Select Another File
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
