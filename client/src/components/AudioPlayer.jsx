@@ -62,14 +62,24 @@ export default function AudioPlayer({ chapterText, title, onNext, onPrev, hasNex
       } catch (err) {
         if (cancelled) return;
         console.error('TTS error:', err);
-        const msg = err?.response?.data
-          ? new TextDecoder().decode(err.response.data)
-          : err?.message || 'Failed to generate audio';
-        try {
-          setTtsError(JSON.parse(msg)?.error || msg);
-        } catch {
-          setTtsError(msg);
+
+        // Always produce a plain string — never pass objects to setTtsError
+        let msg = 'Failed to generate audio. Please try again.';
+        if (err?.response?.data) {
+          try {
+            const decoded = new TextDecoder().decode(err.response.data);
+            const parsed = JSON.parse(decoded);
+            const raw = parsed?.error ?? parsed?.message ?? parsed;
+            msg = typeof raw === 'string' ? raw
+              : raw?.message || raw?.code || msg;
+          } catch {
+            msg = String(err?.message || msg);
+          }
+        } else if (err?.message) {
+          msg = String(err.message);
         }
+
+        setTtsError(String(msg));
         setTtsLoading(false);
       }
     })();

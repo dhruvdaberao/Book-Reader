@@ -28,7 +28,15 @@ export default function Uploader({ onUploadComplete }) {
   const validateAndSetFile = (selectedFile) => {
     const validTypes = ['.epub', '.pdf', '.mobi', '.prc', '.txt'];
     const ext = selectedFile.name.toLowerCase().match(/\.[^.]+$/);
-    
+
+    // Vercel free tier hard-limits request size to 4.5 MB
+    const MAX_MB = 4;
+    if (selectedFile.size > MAX_MB * 1024 * 1024) {
+      setFile(null);
+      setError(`File is too large (${(selectedFile.size / 1024 / 1024).toFixed(1)} MB). Please upload a file smaller than ${MAX_MB} MB.`);
+      return;
+    }
+
     if (ext && validTypes.includes(ext[0])) {
       setFile(selectedFile);
       setError(null);
@@ -49,7 +57,22 @@ export default function Uploader({ onUploadComplete }) {
       failedFileRef.current = null;
       onUploadComplete(data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to process the book.');
+      // Always produce a plain string — Vercel errors are {code, message} objects
+      // which would crash React if rendered directly as JSX children.
+      let msg;
+      if (err.response?.status === 413) {
+        msg = 'File too large for the server (max ~4 MB). Please try a smaller file.';
+      } else {
+        const raw = err.response?.data?.error ?? err.response?.data?.message ?? err.message ?? null;
+        if (typeof raw === 'string') {
+          msg = raw;
+        } else if (raw && typeof raw === 'object') {
+          msg = raw.message || raw.code || JSON.stringify(raw);
+        } else {
+          msg = 'Failed to process the book. Please try again.';
+        }
+      }
+      setError(String(msg));
     } finally {
       setIsUploading(false);
       setFile(null);

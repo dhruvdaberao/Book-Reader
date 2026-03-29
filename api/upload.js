@@ -1,14 +1,11 @@
 const formidable = require('formidable');
 const path = require('path');
 const crypto = require('crypto');
-const { parseEpub, parsePdf, chunkText } = require('./_lib/parse');
 const fs = require('fs/promises');
+const { parseEpub, parsePdf, chunkText } = require('./_lib/parse');
 
-// Disable Vercel's default body parser so formidable can handle multipart
-module.exports.config = { api: { bodyParser: false } };
-
-module.exports.default = async function handler(req, res) {
-  // CORS headers
+const handler = async function (req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -16,7 +13,7 @@ module.exports.default = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const form = formidable({
-    maxFileSize: 50 * 1024 * 1024, // 50 MB
+    maxFileSize: 50 * 1024 * 1024,
     uploadDir: '/tmp',
     keepExtensions: true,
   });
@@ -26,11 +23,11 @@ module.exports.default = async function handler(req, res) {
     [fields, files] = await form.parse(req);
   } catch (err) {
     console.error('Formidable parse error:', err);
-    return res.status(400).json({ error: 'Failed to parse upload. File may be too large (max 50 MB).' });
+    return res.status(400).json({ error: 'Failed to parse upload. File may be too large (max ~4 MB on the free tier).' });
   }
 
   const fileObj = Array.isArray(files.book) ? files.book[0] : files.book;
-  if (!fileObj) return res.status(400).json({ error: 'No file uploaded. Make sure the field name is "book".' });
+  if (!fileObj) return res.status(400).json({ error: 'No file uploaded. Field name must be "book".' });
 
   const originalName = fileObj.originalFilename || fileObj.newFilename || 'Unknown';
   const ext = path.extname(originalName).toLowerCase();
@@ -47,7 +44,6 @@ module.exports.default = async function handler(req, res) {
       chapters = await parsePdf(filePath);
     } else if (ext === '.txt') {
       const text = await fs.readFile(filePath, 'utf8');
-      const { chunkText } = require('./_lib/parse');
       chapters = chunkText(text.replace(/\s+/g, ' ').trim(), 3800).map((c, i) => ({
         title: `Section ${i + 1}`,
         text: c,
@@ -57,18 +53,24 @@ module.exports.default = async function handler(req, res) {
     }
 
     if (!chapters || chapters.length === 0) {
-      return res.status(422).json({ error: 'Could not extract any text from this file. It may be scanned or DRM-protected.' });
+      return res.status(422).json({
+        error: 'Could not extract any text from this file. It may be scanned or DRM-protected.',
+      });
     }
 
-    // Return ALL chapter data — client holds it in localStorage (no DB needed)
     return res.status(200).json({
       id: bookId,
       title,
       totalChapters: chapters.length,
-      chapters, // [{title, text}]
+      chapters, // [{title, text}] — client stores this, no server DB needed
     });
   } catch (err) {
     console.error('Processing error:', err);
-    return res.status(500).json({ error: 'Failed to process the book. ' + (err.message || '') });
+    return res.status(500).json({ error: 'Failed to process the book: ' + (err.message || 'unknown error') });
   }
 };
+
+// Attach Vercel config so body-parser is skipped (formidable handles multipart)
+handler.config = { api: { bodyParser: false } };
+
+module.exports = handler;
