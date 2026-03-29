@@ -1,4 +1,30 @@
+# Dependencies - ignore node_modules everywhere
 node_modules/
+**/node_modules/
+
+# Environment variables
 .env
-/audio/
-/uploads/
+**/.env
+
+# Generated audio & upload files (inside server/)
+server/audio/
+server/uploads/
+audio/
+uploads/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Build output
+client/dist/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
