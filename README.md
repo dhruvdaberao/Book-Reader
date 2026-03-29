@@ -18,7 +18,7 @@ Listen to any book instantly using an advanced AI Text-To-Speech engine. This fu
 ### 1-Click Installation (Windows)
 We provide an automated setup script that will handle all dependencies for you:
 1. Open up a terminal in this root folder.
-2. Run `.\setup.ps1`
+2. Run `./setup.ps1`
    - *This will install all Node modules (frontend/backend).*
    - *This will run `pip install TTS`.*
    - *It will also verify your Calibre installation.*
@@ -27,12 +27,45 @@ We provide an automated setup script that will handle all dependencies for you:
 Run the app locally with ONE command:
 
 ```powershell
-.\start.ps1
+./start.ps1
 ```
 
 If you prefer to start them manually:
-- **Backend:** `cd server && node server.js`
+- **Backend:** `cd server && npm start`
 - **Frontend:** `cd client && npm run dev`
+
+---
+
+## Deployment Architecture (Vercel + Render)
+
+### Frontend (Vercel)
+Deploy only the `client` app to Vercel.
+
+Set this environment variable in Vercel:
+
+```env
+VITE_API_URL=https://your-backend.onrender.com
+```
+
+The frontend calls:
+- `POST ${VITE_API_URL}/api/upload`
+- `POST ${VITE_API_URL}/api/tts`
+
+### Backend (Render)
+Deploy the `server` folder as a Node web service (not serverless).
+
+1. Create a new **Web Service** in Render.
+2. Set Root Directory to `server`.
+3. Set Build Command to `npm install`.
+4. Set Start Command to `npm start`.
+5. Add environment variables as needed (`PORT` is provided by Render automatically).
+6. Ensure the service has Python available for `tts_generator.py` execution.
+
+Backend server uses:
+- `const PORT = process.env.PORT || 3001`
+- `app.use(cors({ origin: '*' }))`
+- `multer` for upload handling
+- Python process invocation for Coqui TTS
 
 ---
 
@@ -40,7 +73,7 @@ If you prefer to start them manually:
 
 ### Backend Structure (`/server`)
 - Uses `epub2` and `pdf-parse` to convert books into small paragraph chunks.
-- When you click "play" on a chapter, the backend triggers `.wav` generation using `python/tts_generator.py` just-in-time, bypassing the need to wait 15 minutes for a whole book.
+- When you click "play" on a chapter, the backend triggers `.wav` generation using `python/tts_generator.py` just-in-time.
 - Audio and Text pieces are cached locally.
 
 ### Paid API Upgrade (OpenAI TTS) ⚡
@@ -51,4 +84,4 @@ If you prefer a faster or higher quality voice generation than the free Coqui TT
    ```env
    OPENAI_API_KEY=sk-your_api_key_here...
    ```
-3. Restart the server. The `tts_generator.py` script will automatically detect this key and fall back to OpenAI API instead of running your local Coqui models.
+3. Restart the server.
