@@ -3,57 +3,69 @@ import { BookOpen, Headphones, Settings, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Uploader from './components/Uploader';
 import AudioPlayer from './components/AudioPlayer';
-import { getChapters, getStreamUrl } from './api';
+import { uploadBook } from './api';
 
 function App() {
   const [currentBook, setCurrentBook] = useState(null); // { id, title, totalChapters }
-  const [chapters, setChapters] = useState([]);
+  const [chapters, setChapters] = useState([]);          // [{title, text}]
   const [currentChapterIndex, setCurrentChapterIndex] = useState(null);
-  
-  // Load saved state (Resume playback)
+
+  // Resume last session from localStorage
   useEffect(() => {
-    const savedBook = localStorage.getItem('audiobookify_last_book');
-    const savedChapter = localStorage.getItem('audiobookify_last_chapter');
-    
-    if (savedBook && savedChapter) {
-      const book = JSON.parse(savedBook);
-      setCurrentBook(book);
-      loadChapters(book.id, parseInt(savedChapter));
+    try {
+      const savedBook = localStorage.getItem('audiobookify_last_book');
+      const savedChapters = localStorage.getItem('audiobookify_last_chapters');
+      const savedChapter = localStorage.getItem('audiobookify_last_chapter');
+
+      if (savedBook && savedChapters && savedChapter !== null) {
+        setCurrentBook(JSON.parse(savedBook));
+        setChapters(JSON.parse(savedChapters));
+        setCurrentChapterIndex(parseInt(savedChapter, 10));
+      }
+    } catch (e) {
+      // Corrupt localStorage — ignore
     }
   }, []);
 
   const handleUploadComplete = (data) => {
-    setCurrentBook(data);
-    localStorage.setItem('audiobookify_last_book', JSON.stringify(data));
-    loadChapters(data.id, 0);
-  };
+    // data = { id, title, totalChapters, chapters: [{title, text}] }
+    const { chapters: allChapters, ...bookMeta } = data;
+    setCurrentBook(bookMeta);
+    setChapters(allChapters);
+    setCurrentChapterIndex(0);
 
-  const loadChapters = async (bookId, startIndex) => {
+    // Persist to localStorage (chapters may be large — catch quota errors)
     try {
-      const data = await getChapters(bookId);
-      setChapters(data.chapters);
-      setCurrentChapterIndex(startIndex);
-      localStorage.setItem('audiobookify_last_chapter', startIndex.toString());
-    } catch (err) {
-      console.error('Failed to load chapters:', err);
+      localStorage.setItem('audiobookify_last_book', JSON.stringify(bookMeta));
+      localStorage.setItem('audiobookify_last_chapters', JSON.stringify(allChapters));
+      localStorage.setItem('audiobookify_last_chapter', '0');
+    } catch (e) {
+      console.warn('localStorage quota exceeded — session not persisted');
     }
   };
 
   const handlePlayChapter = (index) => {
     setCurrentChapterIndex(index);
-    localStorage.setItem('audiobookify_last_chapter', index.toString());
+    try {
+      localStorage.setItem('audiobookify_last_chapter', index.toString());
+    } catch (e) {}
   };
 
   const nextChapter = () => {
-    if (currentChapterIndex < chapters.length - 1) {
-      handlePlayChapter(currentChapterIndex + 1);
-    }
+    if (currentChapterIndex < chapters.length - 1) handlePlayChapter(currentChapterIndex + 1);
   };
 
   const prevChapter = () => {
-    if (currentChapterIndex > 0) {
-      handlePlayChapter(currentChapterIndex - 1);
-    }
+    if (currentChapterIndex > 0) handlePlayChapter(currentChapterIndex - 1);
+  };
+
+  const handleReset = () => {
+    setCurrentBook(null);
+    setChapters([]);
+    setCurrentChapterIndex(null);
+    localStorage.removeItem('audiobookify_last_book');
+    localStorage.removeItem('audiobookify_last_chapters');
+    localStorage.removeItem('audiobookify_last_chapter');
   };
 
   return (
@@ -69,7 +81,7 @@ function App() {
               AudioBookify <span className="text-cyan-400">AI</span>
             </h1>
           </div>
-          
+
           <div className="flex items-center gap-4 text-slate-400">
             <button className="p-2 hover:bg-slate-800 rounded-full transition-colors hidden sm:block">
               <History className="w-5 h-5" />
@@ -101,7 +113,8 @@ function App() {
                   </span>
                 </h2>
                 <p className="text-lg text-slate-400 leading-relaxed">
-                  Upload your EPUB, PDF, or MOBI/PRC. Our AI extracts the text and uses advanced synthetic voices to read it to you with a single click.
+                  Upload your EPUB, PDF, or TXT. Our AI extracts the text and uses advanced synthetic
+                  voices to read it to you with a single click.
                 </p>
               </div>
 
@@ -124,7 +137,7 @@ function App() {
                     <h2 className="text-3xl font-bold text-white mb-2">{currentBook.title}</h2>
                     <div className="flex items-center gap-3 text-sm font-medium">
                       <span className="px-3 py-1 rounded-full bg-cyan-900/30 text-cyan-400 border border-cyan-800">
-                        {currentBook.totalChapters || chapters.length} Parts
+                        {chapters.length} Parts
                       </span>
                       <span className="px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                         AI Narrated
@@ -137,7 +150,7 @@ function App() {
                   <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
                     <BookOpen className="w-5 h-5 text-cyan-400" /> Chapters
                   </h3>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {chapters.map((chapter, idx) => (
                       <button
@@ -159,13 +172,8 @@ function App() {
                 </div>
               </div>
 
-              <button 
-                onClick={() => {
-                  setCurrentBook(null);
-                  setCurrentChapterIndex(null);
-                  setChapters([]);
-                  localStorage.removeItem('audiobookify_last_book');
-                }}
+              <button
+                onClick={handleReset}
                 className="text-slate-400 hover:text-white underline underline-offset-4 decoration-slate-600"
               >
                 Upload a different book
@@ -175,11 +183,11 @@ function App() {
         </AnimatePresence>
       </main>
 
-      {/* Sticky Player */}
+      {/* Sticky Audio Player — passes chapter TEXT for TTS generation */}
       {currentBook && currentChapterIndex !== null && chapters.length > 0 && (
-        <AudioPlayer 
-          audioUrl={getStreamUrl(currentBook.id, currentChapterIndex)}
-          title={`${currentBook.title} - ${chapters[currentChapterIndex]?.title}`}
+        <AudioPlayer
+          chapterText={chapters[currentChapterIndex]?.text}
+          title={`${currentBook.title} — ${chapters[currentChapterIndex]?.title}`}
           onNext={nextChapter}
           onPrev={prevChapter}
           hasNext={currentChapterIndex < chapters.length - 1}

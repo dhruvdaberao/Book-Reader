@@ -1,28 +1,26 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
-});
+// Relative base URL — works on Vercel (/api/*) and locally via Vite proxy
+const api = axios.create({ baseURL: '/api' });
 
+/**
+ * Upload a book file. Server returns { id, title, totalChapters, chapters[] }.
+ */
 export const uploadBook = async (file) => {
   const formData = new FormData();
   formData.append('book', file);
-  
   const response = await api.post('/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    headers: { 'Content-Type': 'multipart/form-data' },
   });
   return response.data;
 };
 
-export const getChapters = async (bookId) => {
-  const response = await api.get(`/book/${bookId}/chapters`);
+/**
+ * Call OpenAI TTS and return an ArrayBuffer of MP3 audio.
+ */
+export const generateTts = async (text) => {
+  const response = await api.post('/tts', { text }, { responseType: 'arraybuffer' });
   return response.data;
-};
-
-export const getStreamUrl = (bookId, chapterIndex) => {
-  return `http://localhost:3001/api/stream/${bookId}/${chapterIndex}`;
 };
 
 export default api;
